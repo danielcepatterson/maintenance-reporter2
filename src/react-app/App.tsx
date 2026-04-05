@@ -372,6 +372,18 @@ function App() {
                 <div className="kpi-value">{formatCurrency(reportData.kpis.annualServices)}</div>
               </div>
             </div>
+            <div className="total-revenue">
+              <div className="total-revenue-label">💵 Total Revenue</div>
+              <div className="total-revenue-value">
+                {formatCurrency(
+                  reportData.kpis.labor +
+                  reportData.kpis.laborMarkup +
+                  reportData.kpis.materialsMarkup +
+                  reportData.kpis.landscaping +
+                  reportData.kpis.annualServices
+                )}
+              </div>
+            </div>
           </section>
 
           <section className="operator-section">

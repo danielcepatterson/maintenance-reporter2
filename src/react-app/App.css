@@ -203,6 +203,35 @@ body {
   color: #fff;
 }
 
+/* Total Revenue */
+.total-revenue {
+  margin-top: 2rem;
+  padding: 1.5rem 2rem;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.15), rgba(123, 44, 191, 0.15));
+  border: 2px solid rgba(0, 212, 255, 0.3);
+  border-radius: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.total-revenue-label {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+.total-revenue-value {
+  font-size: 2.5rem;
+  font-weight: 800;
+  background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 /* Operator Section */
 .operator-section {
   margin-bottom: 2rem;
