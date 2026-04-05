@@ -1,66 +1,308 @@
-// src/App.tsx
-
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import viteLogo from "/vite.svg";
-import cloudflareLogo from "./assets/Cloudflare_Logo.svg";
-import honoLogo from "./assets/hono.svg";
+import { useState, useCallback } from "react";
+import * as XLSX from "xlsx";
 import "./App.css";
 
-function App() {
-	const [count, setCount] = useState(0);
-	const [name, setName] = useState("unknown");
+interface KPIData {
+  labor: number;
+  laborMarkup: number;
+  materialsMarkup: number;
+  landscaping: number;
+  annualServices: number;
+}
 
-	return (
-		<>
-			<div>
-				<a href="https://vite.dev" target="_blank">
-					<img src={viteLogo} className="logo" alt="Vite logo" />
-				</a>
-				<a href="https://react.dev" target="_blank">
-					<img src={reactLogo} className="logo react" alt="React logo" />
-				</a>
-				<a href="https://hono.dev/" target="_blank">
-					<img src={honoLogo} className="logo cloudflare" alt="Hono logo" />
-				</a>
-				<a href="https://workers.cloudflare.com/" target="_blank">
-					<img
-						src={cloudflareLogo}
-						className="logo cloudflare"
-						alt="Cloudflare logo"
-					/>
-				</a>
-			</div>
-			<h1>Vite + React + Hono + Cloudflare</h1>
-			<div className="card">
-				<button
-					onClick={() => setCount((count) => count + 1)}
-					aria-label="increment"
-				>
-					count is {count}
-				</button>
-				<p>
-					Edit <code>src/App.tsx</code> and save to test HMR
-				</p>
-			</div>
-			<div className="card">
-				<button
-					onClick={() => {
-						fetch("/api/")
-							.then((res) => res.json() as Promise<{ name: string }>)
-							.then((data) => setName(data.name));
-					}}
-					aria-label="get name"
-				>
-					Name from API is: {name}
-				</button>
-				<p>
-					Edit <code>worker/index.ts</code> to change the name
-				</p>
-			</div>
-			<p className="read-the-docs">Click on the logos to learn more</p>
-		</>
-	);
+interface OperatorHours {
+  [operator: string]: number;
+}
+
+interface ReportData {
+  kpis: KPIData;
+  operatorHours: OperatorHours;
+  unassignedHours: number;
+  totalWorkOrders: number;
+}
+
+function App() {
+  const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const processExcelFile = useCallback((file: File) => {
+    setError(null);
+    setFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = e.target?.result;
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+
+        // Convert to JSON with header row
+        const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
+          defval: 0,
+        });
+
+        // Initialize KPIs
+        const kpis: KPIData = {
+          labor: 0,
+          laborMarkup: 0,
+          materialsMarkup: 0,
+          landscaping: 0,
+          annualServices: 0,
+        };
+
+        const operatorHours: OperatorHours = {};
+        let unassignedHours = 0;
+
+        // Process each row
+        jsonData.forEach((row) => {
+          // Get values by column letter position
+          // Column X (24) = Labor
+          // Column Y (25) = Labor Markup
+          // Column AA (27) = Materials Markup
+          // Column AD (30) = Landscaping
+          // Column AE (31) = Annual Services
+          // Column R (18) = Hours
+          // Column A (1) = Assigned Operator
+
+          const keys = Object.keys(row);
+          
+          // Find the column values by header name or position
+          // We need to map the actual column headers
+          const laborValue = parseFloat(String(row["Labor"] ?? row[keys[23]] ?? 0)) || 0;
+          const laborMarkupValue = parseFloat(String(row["Labor Markup"] ?? row[keys[24]] ?? 0)) || 0;
+          const materialsMarkupValue = parseFloat(String(row["Materials Markup"] ?? row[keys[26]] ?? 0)) || 0;
+          const landscapingValue = parseFloat(String(row["Landscaping"] ?? row[keys[29]] ?? 0)) || 0;
+          const annualServicesValue = parseFloat(String(row["Annual Services"] ?? row[keys[30]] ?? 0)) || 0;
+          
+          const hours = parseFloat(String(row["Total Hours"] ?? row["Hours"] ?? row[keys[17]] ?? 0)) || 0;
+          const operator = String(row["Assigned To"] ?? row["Assigned Operator"] ?? row[keys[0]] ?? "").trim();
+
+          kpis.labor += laborValue;
+          kpis.laborMarkup += laborMarkupValue;
+          kpis.materialsMarkup += materialsMarkupValue;
+          kpis.landscaping += landscapingValue;
+          kpis.annualServices += annualServicesValue;
+
+          if (operator && operator !== "0" && operator !== "undefined" && operator !== "") {
+            operatorHours[operator] = (operatorHours[operator] || 0) + hours;
+          } else {
+            unassignedHours += hours;
+          }
+        });
+
+        setReportData({
+          kpis,
+          operatorHours,
+          unassignedHours,
+          totalWorkOrders: jsonData.length,
+        });
+      } catch (err) {
+        console.error("Error processing file:", err);
+        setError("Error processing file. Please ensure it's a valid Excel file.");
+      }
+    };
+
+    reader.onerror = () => {
+      setError("Error reading file.");
+    };
+
+    reader.readAsArrayBuffer(file);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setIsDragging(false);
+
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        const file = files[0];
+        if (
+          file.name.endsWith(".xls") ||
+          file.name.endsWith(".xlsx") ||
+          file.name.endsWith(".csv")
+        ) {
+          processExcelFile(file);
+        } else {
+          setError("Please upload an Excel file (.xls, .xlsx) or CSV file.");
+        }
+      }
+    },
+    [processExcelFile]
+  );
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files && files.length > 0) {
+        processExcelFile(files[0]);
+      }
+    },
+    [processExcelFile]
+  );
+
+  const formatCurrency = (value: number): string => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(value);
+  };
+
+  const formatHours = (value: number): string => {
+    return value.toFixed(2);
+  };
+
+  const resetReport = () => {
+    setReportData(null);
+    setFileName(null);
+    setError(null);
+  };
+
+  // Sort operators by hours (descending)
+  const sortedOperators = reportData
+    ? Object.entries(reportData.operatorHours).sort(([, a], [, b]) => b - a)
+    : [];
+
+  const totalOperatorHours = sortedOperators.reduce((sum, [, hours]) => sum + hours, 0);
+
+  return (
+    <div className="app-container">
+      <header className="header">
+        <h1>🔧 Maintenance Work Order Report</h1>
+        <p className="subtitle">Drop your work order report to analyze KPIs</p>
+      </header>
+
+      {!reportData ? (
+        <div
+          className={`drop-zone ${isDragging ? "dragging" : ""}`}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+        >
+          <div className="drop-content">
+            <div className="drop-icon">📁</div>
+            <h2>Drop Work Order Report Here</h2>
+            <p>or click to select a file</p>
+            <input
+              type="file"
+              accept=".xls,.xlsx,.csv"
+              onChange={handleFileSelect}
+              className="file-input"
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="results-container">
+          <div className="file-info">
+            <span className="file-name">📄 {fileName}</span>
+            <button onClick={resetReport} className="reset-button">
+              Upload New Report
+            </button>
+          </div>
+
+          <div className="stats-summary">
+            <span>Total Work Orders: <strong>{reportData.totalWorkOrders}</strong></span>
+          </div>
+
+          <section className="kpi-section">
+            <h2>💰 Financial KPIs</h2>
+            <div className="kpi-grid">
+              <div className="kpi-card labor">
+                <div className="kpi-icon">👷</div>
+                <div className="kpi-label">Labor</div>
+                <div className="kpi-value">{formatCurrency(reportData.kpis.labor)}</div>
+              </div>
+              <div className="kpi-card labor-markup">
+                <div className="kpi-icon">📈</div>
+                <div className="kpi-label">Labor Markup</div>
+                <div className="kpi-value">{formatCurrency(reportData.kpis.laborMarkup)}</div>
+              </div>
+              <div className="kpi-card materials">
+                <div className="kpi-icon">🔩</div>
+                <div className="kpi-label">Materials Markup</div>
+                <div className="kpi-value">{formatCurrency(reportData.kpis.materialsMarkup)}</div>
+              </div>
+              <div className="kpi-card landscaping">
+                <div className="kpi-icon">🌿</div>
+                <div className="kpi-label">Landscaping</div>
+                <div className="kpi-value">{formatCurrency(reportData.kpis.landscaping)}</div>
+              </div>
+              <div className="kpi-card annual">
+                <div className="kpi-icon">📅</div>
+                <div className="kpi-label">Annual Services</div>
+                <div className="kpi-value">{formatCurrency(reportData.kpis.annualServices)}</div>
+              </div>
+            </div>
+          </section>
+
+          <section className="operator-section">
+            <h2>⏱️ Hours by Operator</h2>
+            <div className="operator-stats">
+              <span>Total Tracked Hours: <strong>{formatHours(totalOperatorHours + reportData.unassignedHours)}</strong></span>
+            </div>
+            
+            <div className="operator-grid">
+              {sortedOperators.map(([operator, hours]) => (
+                <div key={operator} className="operator-card">
+                  <div className="operator-name">{operator}</div>
+                  <div className="operator-hours">{formatHours(hours)} hrs</div>
+                  <div className="operator-bar">
+                    <div 
+                      className="operator-bar-fill" 
+                      style={{ 
+                        width: `${totalOperatorHours > 0 ? (hours / totalOperatorHours) * 100 : 0}%` 
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+              
+              {reportData.unassignedHours > 0 && (
+                <div className="operator-card unassigned">
+                  <div className="operator-name">⚠️ Unassigned</div>
+                  <div className="operator-hours">{formatHours(reportData.unassignedHours)} hrs</div>
+                  <div className="operator-bar">
+                    <div 
+                      className="operator-bar-fill unassigned-bar" 
+                      style={{ 
+                        width: `${totalOperatorHours + reportData.unassignedHours > 0 
+                          ? (reportData.unassignedHours / (totalOperatorHours + reportData.unassignedHours)) * 100 
+                          : 0}%` 
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {sortedOperators.length === 0 && reportData.unassignedHours === 0 && (
+                <div className="no-data">No operator hours data found in the report.</div>
+              )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {error && (
+        <div className="error-message">
+          <span>⚠️ {error}</span>
+          <button onClick={() => setError(null)}>✕</button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default App;
