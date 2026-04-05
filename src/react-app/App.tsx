@@ -36,13 +36,41 @@ function App() {
       try {
         const data = e.target?.result;
         const workbook = XLSX.read(data, { type: "array" });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
+        
+        // Find the sheet with actual data (skip sheets with only 1 cell like "Generated: ...")
+        let worksheet = null;
+        let sheetName = "";
+        for (const name of workbook.SheetNames) {
+          const sheet = workbook.Sheets[name];
+          const range = sheet["!ref"];
+          if (range) {
+            const decoded = XLSX.utils.decode_range(range);
+            // Use sheet if it has more than 1 column
+            if (decoded.e.c > 1) {
+              worksheet = sheet;
+              sheetName = name;
+              break;
+            }
+          }
+        }
+        
+        if (!worksheet) {
+          worksheet = workbook.Sheets[workbook.SheetNames[0]];
+          sheetName = workbook.SheetNames[0];
+        }
+
+        console.log("Using sheet:", sheetName);
 
         // Convert to JSON with header row
         const jsonData = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
-          defval: 0,
+          defval: "",
         });
+
+        console.log("Total rows:", jsonData.length);
+        if (jsonData.length > 0) {
+          console.log("Sample row keys:", Object.keys(jsonData[0]));
+          console.log("Sample row:", jsonData[0]);
+        }
 
         // Initialize KPIs
         const kpis: KPIData = {
@@ -56,29 +84,53 @@ function App() {
         const operatorHours: OperatorHours = {};
         let unassignedHours = 0;
 
+        // Helper to parse currency/number values
+        const parseNumber = (val: unknown): number => {
+          if (val === null || val === undefined || val === "" || val === " ") return 0;
+          const str = String(val).replace(/[$,]/g, "").trim();
+          if (str === "" || str === " ") return 0;
+          const num = parseFloat(str);
+          return isNaN(num) ? 0 : num;
+        };
+
+        // Helper to parse hours in "HH:MM" format or decimal
+        const parseHours = (val: unknown): number => {
+          if (val === null || val === undefined || val === "" || val === " ") return 0;
+          const str = String(val).trim();
+          if (str === "" || str === " ") return 0;
+          
+          // Check if it's in HH:MM format
+          if (str.includes(":")) {
+            const parts = str.split(":");
+            const hours = parseInt(parts[0], 10) || 0;
+            const minutes = parseInt(parts[1], 10) || 0;
+            return hours + minutes / 60;
+          }
+          
+          // Otherwise try to parse as decimal
+          const num = parseFloat(str);
+          return isNaN(num) ? 0 : num;
+        };
+
         // Process each row
         jsonData.forEach((row) => {
-          // Get values by column letter position
-          // Column X (24) = Labor
-          // Column Y (25) = Labor Markup
-          // Column AA (27) = Materials Markup
-          // Column AD (30) = Landscaping
-          // Column AE (31) = Annual Services
-          // Column R (18) = Hours
-          // Column A (1) = Assigned Operator
+          // Based on actual Excel structure:
+          // Column A (0): Assigned Operator
+          // Column R (17): Hours (format "HH:MM")
+          // Column X (23): Labor
+          // Column Y (24): Labor Markup
+          // Column AA (26): Materials Markup
+          // Column AD (29): Landscaping
+          // Column AE (30): Spring/Winter Services (Annual Services)
 
-          const keys = Object.keys(row);
+          const laborValue = parseNumber(row["Labor"]);
+          const laborMarkupValue = parseNumber(row["Labor Markup"]);
+          const materialsMarkupValue = parseNumber(row["Materials Markup"]);
+          const landscapingValue = parseNumber(row["Landscaping"]);
+          const annualServicesValue = parseNumber(row["Spring/Winter Services"]);
           
-          // Find the column values by header name or position
-          // We need to map the actual column headers
-          const laborValue = parseFloat(String(row["Labor"] ?? row[keys[23]] ?? 0)) || 0;
-          const laborMarkupValue = parseFloat(String(row["Labor Markup"] ?? row[keys[24]] ?? 0)) || 0;
-          const materialsMarkupValue = parseFloat(String(row["Materials Markup"] ?? row[keys[26]] ?? 0)) || 0;
-          const landscapingValue = parseFloat(String(row["Landscaping"] ?? row[keys[29]] ?? 0)) || 0;
-          const annualServicesValue = parseFloat(String(row["Annual Services"] ?? row[keys[30]] ?? 0)) || 0;
-          
-          const hours = parseFloat(String(row["Total Hours"] ?? row["Hours"] ?? row[keys[17]] ?? 0)) || 0;
-          const operator = String(row["Assigned To"] ?? row["Assigned Operator"] ?? row[keys[0]] ?? "").trim();
+          const hours = parseHours(row["Hours"]);
+          const operator = String(row["Assigned Operator"] ?? "").trim();
 
           kpis.labor += laborValue;
           kpis.laborMarkup += laborMarkupValue;
@@ -92,6 +144,9 @@ function App() {
             unassignedHours += hours;
           }
         });
+
+        console.log("KPIs:", kpis);
+        console.log("Operator Hours:", operatorHours);
 
         setReportData({
           kpis,
@@ -242,7 +297,7 @@ function App() {
               </div>
               <div className="kpi-card annual">
                 <div className="kpi-icon">📅</div>
-                <div className="kpi-label">Annual Services</div>
+                <div className="kpi-label">Spring/Winter Services</div>
                 <div className="kpi-value">{formatCurrency(reportData.kpis.annualServices)}</div>
               </div>
             </div>
