@@ -217,15 +217,33 @@ body {
   text-align: center;
   margin-bottom: 1.5rem;
   color: #a0a0a0;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 1rem;
+  border-radius: 12px;
+}
+
+.stats-row {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  flex-wrap: wrap;
 }
 
 .operator-stats strong {
   color: #00d4ff;
 }
 
+.operator-stats strong.tracked {
+  color: #4ade80;
+}
+
+.operator-stats strong.untracked {
+  color: #fbbf24;
+}
+
 .operator-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 1rem;
 }
 
@@ -248,9 +266,37 @@ body {
 
 .operator-name {
   font-weight: 600;
-  font-size: 1rem;
-  margin-bottom: 0.25rem;
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
   color: #fff;
+}
+
+.operator-hours-container {
+  margin-bottom: 0.75rem;
+}
+
+.hours-breakdown {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.hours-tracked {
+  color: #4ade80;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.hours-untracked {
+  color: #fbbf24;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.hours-total {
+  color: #00d4ff;
+  font-size: 1.1rem;
+  font-weight: 700;
 }
 
 .operator-hours {
@@ -265,17 +311,29 @@ body {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 4px;
   overflow: hidden;
+  position: relative;
 }
 
 .operator-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #00d4ff, #7b2cbf);
   border-radius: 4px;
   transition: width 0.5s ease;
+  position: absolute;
+  top: 0;
 }
 
-.operator-bar-fill.unassigned-bar {
+.operator-bar-fill.tracked-bar {
+  background: linear-gradient(90deg, #4ade80, #22c55e);
+  left: 0;
+}
+
+.operator-bar-fill.untracked-bar {
   background: linear-gradient(90deg, #fbbf24, #f59e0b);
+}
+
+.operator-bar-fill.unassigned-tracked-bar {
+  background: linear-gradient(90deg, #f97316, #ea580c);
+  left: 0;
 }
 
 .no-data {
